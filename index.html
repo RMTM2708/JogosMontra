@@ -401,8 +401,23 @@ function bump(k){
     localStorage.setItem(SK, JSON.stringify(s));
   } catch {}
 }
+// Por jogo (desde 25/11/2026): jogos concluídos ("fim_<id>"), vales novos ("vale_<id>") e quantos jogos acabaram com cada pontuação ("p_<id>_<pontos>").
+// Serve para afinar os mínimos do vale com dados reais.
+const MINIMOS = { visao: "pontuacaoMinima", cobra: "cobraMinimo", pecas: "pecasMinimo", memoria: "memoriaMinimo", garra: "garraMinimo" };   // chave de CONFIG com o mínimo de cada jogo
+function statsJogos(s){
+  const t = {}; Object.values(s.dias || {}).forEach(d => Object.keys(d).forEach(k => { t[k] = (t[k] || 0) + d[k]; }));
+  return Object.keys(CATALOGO).map(id => {
+    const pts = Object.keys(t).filter(k => k.startsWith("p_" + id + "_")).map(k => [parseInt(k.slice(id.length + 3), 10), t[k]]).filter(p => p[0] >= 0).sort((a, b) => a[0] - b[0]);
+    const min = CONFIG[MINIMOS[id]], fim = t["fim_" + id] || 0;
+    return { id, nome: CATALOGO[id].nome, min, fim, vales: t["vale_" + id] || 0, pts, chegam: pts.filter(p => p[0] >= min).reduce((n, p) => n + p[1], 0) };
+  });
+}
+// Versão do site neste ecrã: a data em que o ficheiro foi publicado (vem do servidor)
+const VERSAO = (() => { const d = new Date(document.lastModified); return isNaN(d) ? null : d; })();
+const versaoTxt = () => VERSAO ? VERSAO.toLocaleString("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "desconhecida";
 function toggleStats(){
   const old = $(".stats"); if (old) { old.remove(); return; }
+  const porJogo = statsJogos(getStats());
   const s = getStats(), days = Object.keys(s.dias || {}).sort().reverse();
   const tot = {}; STAT_KEYS.forEach(([k]) => tot[k] = 0);
   days.forEach(d => STAT_KEYS.forEach(([k]) => tot[k] += (s.dias[d][k] || 0)));
@@ -413,13 +428,19 @@ function toggleStats(){
     <tbody>${days.map(d => `<tr><td>${d}</td>${STAT_KEYS.map(([k]) => `<td>${s.dias[d][k] || 0}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${STAT_KEYS.length + 1}">Sem dados ainda.</td></tr>`}</tbody>
     <tfoot><tr><td>Total</td>${STAT_KEYS.map(([k]) => `<td>${tot[k]}</td>`).join("")}</tr></tfoot></table>
     <small>Taxa de conclusão (concluídos ÷ ligações): <b>${conv}</b>. Os vouchers usados contam-se na loja (página ?validar ou registo manual).</small>
+    <h3 style="margin-top:3vh">Vales por jogo</h3>
+    <table><thead><tr><th>Jogo</th><th>Mínimo atual</th><th>Jogos concluídos</th><th>Com pontuação para vale</th><th>Vales novos</th><th>Pontuação: n.º de jogos</th></tr></thead>
+    <tbody>${porJogo.map(j => `<tr><td>${esc(j.nome)}</td><td>${j.min}</td><td>${j.fim}</td><td>${j.fim ? `${j.chegam} (${Math.round(j.chegam / j.fim * 100)}%)` : "—"}</td><td>${j.vales}</td><td>${j.pts.map(p => `${p[0]}: ${p[1]}`).join(" · ") || "—"}</td></tr>`).join("")}</tbody></table>
+    <small>Conta desde 25/11/2026. "Com pontuação para vale" usa o mínimo atual; os vales novos podem ser menos (quem repete com vale ativo, ou teto diário).<br>Versão do site neste ecrã: <b id="sVer">${versaoTxt()}</b>.</small>
     <div class="btns"><button id="sCsv">Exportar CSV</button><button class="sec" id="sReset">Repor contadores</button><button class="sec" id="sClose">Fechar (S)</button></div>`;
   document.body.appendChild(el);
   $("#sClose").onclick = toggleStats;
   $("#sReset").onclick = () => { if (confirm("Apagar todas as estatísticas desta montra?")) { localStorage.removeItem(SK); toggleStats(); } };
   $("#sCsv").onclick = () => {
     const rows = [["dia", ...STAT_KEYS.map(([k]) => k)].join(";")]
-      .concat(days.slice().reverse().map(d => [d, ...STAT_KEYS.map(([k]) => s.dias[d][k] || 0)].join(";")));
+      .concat(days.slice().reverse().map(d => [d, ...STAT_KEYS.map(([k]) => s.dias[d][k] || 0)].join(";")))
+      .concat(["", "jogo;minimo;concluidos;com_pontuacao_para_vale;vales_novos"], porJogo.map(j => [j.id, j.min, j.fim, j.chegam, j.vales].join(";")))
+      .concat(["", "jogo;pontuacao;jogos"], porJogo.flatMap(j => j.pts.map(p => [j.id, p[0], p[1]].join(";"))));
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob(["﻿" + rows.join("\n")], {type:"text/csv"}));
     a.download = "estatisticas-montra.csv"; a.click();
@@ -474,10 +495,21 @@ function initScreen(){
   function safeReload(){   // só recarrega se o site responder (evita ficar numa página de erro sem internet)
     fetch(location.pathname + "?_=" + Date.now(), { cache: "no-store" }).then(r => { if (r.ok && !ocupado()) location.reload(); }).catch(() => {});
   }
+  // Versão nova publicada: com a montra parada, recarrega sozinha. Só tenta uma vez por versão, para nunca ficar a recarregar sem parar.
+  function verNova(){
+    if (!VERSAO || ocupado() || menuAberto) return;
+    fetch(location.pathname + "?_=" + Date.now(), { method: "HEAD", cache: "no-store" }).then(r => {
+      const pub = r.ok ? Date.parse(r.headers.get("Last-Modified") || "") : NaN;
+      if (!(pub - VERSAO.getTime() > 5000) || ocupado() || menuAberto) return;
+      const k = "zo_montra_versao_tentada", ja = sessionStorage.getItem(k); sessionStorage.setItem(k, String(pub));
+      if (ja !== String(pub)) location.reload();
+    }).catch(() => {});
+  }
   if (!SOLO) {
-    const arranque = Date.now(); let semLigacaoDesde = 0;
+    const arranque = Date.now(); let semLigacaoDesde = 0, voltas = 0;
     setInterval(() => {
       const d = new Date();
+      if (++voltas % 10 === 0) verNova();   // de 5 em 5 minutos
       if (Date.now() - arranque > 3600e3 && d.getHours() === CONFIG.recargaDiariaHora && !ocupado()) return safeReload();
       const ligado = clients.some(c => c.connected);
       if (ligado) semLigacaoDesde = 0; else if (!semLigacaoDesde) semLigacaoDesde = Date.now();
@@ -818,12 +850,12 @@ function initScreen(){
   function terminar(){
     const score = J.pontos(), label = J.rotulo ? J.rotulo(score) : "", minimo = J.minimo();
     stopGame();
-    bump("concluidos");
+    bump("concluidos"); bump("fim_" + J.id); bump("p_" + J.id + "_" + score);
     const reused = !!playerVoucher;
     // Vale novo só com a pontuação mínima e enquanto não se atingir o teto diário desta montra
     const motivo = reused ? "" : score < minimo ? "pontos" : valesHoje() >= CONFIG.valesPorDia ? "esgotado" : "";
     const code = motivo ? null : (playerVoucher || makeCode());
-    if (code && !reused) { bump("vouchers"); contaVale(); }
+    if (code && !reused) { bump("vouchers"); bump("vale_" + J.id); contaVale(); }
     const p = code ? parseCode(code) : null;
     const recorde = score > 0 && score > getRecord(); if (recorde) setRecord(score);
     send({ t: "end", score, total: J.total || 0, label, code: p ? p.code : null, semVale: motivo, min: minimo, reused, recorde });
@@ -1479,7 +1511,7 @@ function initScreen(){
     const m = document.createElement("div"); m.id = "menu"; m.className = "menu";
     m.innerHTML = `<h2>Que jogo fica nesta montra?</h2><div class="lista">${Object.keys(JOGOS).filter(existe).map(id =>
       `<button class="mJogo" data-jogo="${id}">${JOGOS[id].atrair(0)}<b>${esc(CATALOGO[id].nome)}</b><span>${esc(CATALOGO[id].descricao)}</span><em>${J && J.id === id ? "Em uso" : ""}</em></button>`).join("")}</div>
-      <p>A escolha fica guardada neste computador. Para trocar, prima M.</p>`;
+      <p>A escolha fica guardada neste computador. Para trocar, prima M.<br>Versão do site: ${versaoTxt()}</p>`;
     stage.innerHTML = "";   // tira a demonstração do ecrã de espera: as do menu usam os mesmos identificadores
     document.body.appendChild(m);
     Object.keys(JOGOS).filter(existe).forEach(id => JOGOS[id].aoAtrair());   // cada cartão mostra o jogo a jogar-se sozinho
