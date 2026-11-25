@@ -253,7 +253,7 @@ const CONFIG = {
   logoUrl: "",           // imagem do logótipo (ex.: "logo.png" na mesma pasta); vazio = nome da loja em texto
   // --- Jogos de arcada (cobra e os que vierem) ---
   arcadaLimiteSeg: 120,     // duração máxima de um jogo; ao chegar aqui termina com a pontuação que tiver
-  cobraMinimo: 5,           // óculos apanhados para ganhar vale
+  cobraMinimo: 5,           // símbolos apanhados para ganhar vale
   cobraPassoInicioMs: 320,  // tempo entre passos no início (mais alto = mais lento)
   cobraPassoFimMs: 200,     // tempo entre passos na velocidade máxima (teste real: 220 joga-se bem, 150 já custa)
   cobraAceleraSeg: 90,      // segundos até chegar à velocidade máxima
@@ -303,14 +303,14 @@ const CATALOGO = {
       partilha: (score, total) => `Fiz ${score}/${total} no teste de visão relâmpago da ${CONFIG.instagramNome}. Consegue fazer melhor?`,
       legenda: "no teste de visão relâmpago", ficheiro: "zona-optica-teste-de-visao.png"
     } },
-  cobra: { nome: "Cobra dos óculos", descricao: "A cobra apanha óculos e cresce. Não pode bater.",
+  cobra: { nome: "Cobra da Zona Óptica", descricao: "A cobra apanha símbolos da marca e cresce. Não pode bater.",
     tel: {
-      comando: "direcoes", pontuacao: score => String(score), unidade: () => "óculos apanhados",
-      instrucao: () => "Guie a cobra com as setas e apanhe os óculos. Se bater na parede ou em si própria, acaba.",
+      comando: "direcoes", pontuacao: score => String(score), unidade: n => n === 1 ? "símbolo apanhado" : "símbolos apanhados",
+      instrucao: () => "Guie a cobra com as setas e apanhe os símbolos. Se bater na parede ou em si própria, acaba.",
       olhar: "Olhe para a montra",
-      quase: min => `Apanhe pelo menos ${min} óculos para ganhar uma surpresa. Leia o código da montra e tente outra vez.`,
-      partilha: score => `Apanhei ${score} óculos na cobra da ${CONFIG.instagramNome}. Consegue fazer melhor?`,
-      legenda: "óculos apanhados na cobra", ficheiro: "zona-optica-cobra.png"
+      quase: min => `Apanhe pelo menos ${min} ${min === 1 ? "símbolo" : "símbolos"} para ganhar uma surpresa. Leia o código da montra e tente outra vez.`,
+      partilha: score => `Apanhei ${score} ${score === 1 ? "símbolo" : "símbolos"} na cobra da ${CONFIG.instagramNome}. Consegue fazer melhor?`,
+      legenda: "símbolos apanhados na cobra", ficheiro: "zona-optica-cobra.png"
     } },
   pecas: { nome: "Lentes em linha", descricao: "Encaixe as peças que caem e complete linhas.",
     tel: {
@@ -845,7 +845,7 @@ function initScreen(){
   }
   if (SOLO) { stage.addEventListener("click", soloStart); setStatus(true, "Modo de teste"); }
 
-  /* ---- Cobra: apanha óculos e cresce. O jogo corre aqui no ecrã; o telemóvel só envia direções ({t:"in", a}).
+  /* ---- Cobra: apanha símbolos da marca (mascote e logótipos) e cresce. O jogo corre aqui no ecrã; o telemóvel só envia direções ({t:"in", a}).
      Avança por passos; as mudanças de direção entram numa fila curta para um toque "em cima da hora" não se perder. */
   const COBRA = { cols: 24, rows: 14 };
   const OPOSTA = { up: "down", down: "up", left: "right", right: "left" };
@@ -861,7 +861,12 @@ function initScreen(){
   }
   function cobraDesenhar(cv, st, cols, rows){   // st: { cobra: [[x,y]...], comida: [x,y] }
     const { x, cel } = prepararCanvas(cv, cols, rows);
-    if (st.comida) {   // uns óculos
+    const fig = st.comida && COBRA_FIG[st.fig || 0];
+    if (fig && fig.complete && fig.naturalWidth) {   // um símbolo da marca, um pouco maior do que a casa para se ver ao longe, sem sair do tabuleiro
+      const t = cel * 1.5, e = Math.min(t / fig.naturalWidth, t / fig.naturalHeight), w = fig.naturalWidth * e, h = fig.naturalHeight * e;
+      const dentro = (v, tam, max) => Math.max(0, Math.min(max - tam, v));
+      x.drawImage(fig, dentro((st.comida[0] + .5) * cel - w / 2, w, cols * cel), dentro((st.comida[1] + .5) * cel - h / 2, h, rows * cel), w, h);
+    } else if (st.comida) {   // se a imagem ainda não carregou: uns óculos desenhados
       const ox = st.comida[0] * cel, oy = st.comida[1] * cel + cel * .52, r = cel * .2;
       x.strokeStyle = "#34A7DE"; x.lineWidth = Math.max(2, cel * .1); x.beginPath();
       x.arc(ox + cel * .27, oy, r, 0, 7); x.moveTo(ox + cel * .73 + r, oy); x.arc(ox + cel * .73, oy, r, 0, 7);
@@ -874,7 +879,10 @@ function initScreen(){
       x.fill();
     });
   }
-  function cobraComida(){ let c; do { c = [rand(COBRA.cols), rand(COBRA.rows)]; } while (naCobra(game.cobra, c)); game.comida = c; }
+  // O que a cobra come: a mascote (3 poses) e as versões do símbolo do logótipo. Muda de cada vez, sem repetir a anterior.
+  const COBRA_FIG = [ASSETS.apresenta, ASSETS.dedo, ASSETS.polegar, ...ASSETS.logos].map(src => { const im = new Image(); im.src = src; return im; });
+  const cobraFig = ant => { let f; do { f = rand(COBRA_FIG.length); } while (f === ant); return f; };
+  function cobraComida(){ let c; do { c = [rand(COBRA.cols), rand(COBRA.rows)]; } while (naCobra(game.cobra, c)); game.comida = c; game.fig = cobraFig(game.fig); }
   function cobraIniciar(){
     const y = Math.floor(COBRA.rows / 2);
     Object.assign(game, { cobra: [[6, y], [5, y], [4, y], [3, y]], dir: "right", fila: [], comida: null, pts: 0, inicio: Date.now(), t: null, fala: "" });
@@ -925,7 +933,7 @@ function initScreen(){
   function cobraDemo(){
     clearInterval(cobraDemoT);
     const N = 10; let st;
-    const novo = () => { st = { cobra: [[4, 5], [3, 5], [2, 5]], dir: "right", comida: [7, 2] }; };
+    const novo = () => { st = { cobra: [[4, 5], [3, 5], [2, 5]], dir: "right", comida: [7, 2], fig: cobraFig() }; };
     const prox = d => [st.cobra[0][0] + VEC[d][0], st.cobra[0][1] + VEC[d][1]];
     const dist = d => Math.abs(prox(d)[0] - st.comida[0]) + Math.abs(prox(d)[1] - st.comida[1]);
     novo();
@@ -936,7 +944,7 @@ function initScreen(){
       if (!ops.length || st.cobra.length > 14) return novo();
       st.dir = ops.sort((a, b) => dist(a) - dist(b))[0];
       const c = prox(st.dir); st.cobra.unshift(c);
-      if (c[0] === st.comida[0] && c[1] === st.comida[1]) { do { st.comida = [rand(N), rand(N)]; } while (naCobra(st.cobra, st.comida)); }
+      if (c[0] === st.comida[0] && c[1] === st.comida[1]) { do { st.comida = [rand(N), rand(N)]; } while (naCobra(st.cobra, st.comida)); st.fig = cobraFig(st.fig); }
       else st.cobra.pop();
       document.querySelectorAll("#dpad span").forEach(e => e.classList.toggle("on", e.dataset.d === st.dir));
       cobraDesenhar(cv, st, N, N);
@@ -1375,14 +1383,14 @@ function initScreen(){
       rotulo: n => scoreLabel(n)
     },
     cobra: {
-      id: "cobra", titulo: "Apanhe os óculos!", total: null, unidade: () => "óculos",
+      id: "cobra", titulo: "Apanhe os símbolos!", total: null, unidade: n => n === 1 ? "símbolo" : "símbolos",
       ajudaTeste: "Guie a cobra com as setas do teclado ← ↑ → ↓",
       falas: {
-        montra: [["apresenta","Olá! Quantos óculos consegue apanhar?"],["dedo","Aponte a câmara do telemóvel ao código."],["polegar","É só um minuto. Aceita o desafio?"],["apresenta","Jogue aqui mesmo, com o seu telemóvel."]],
-        teste: [["apresenta","Olá! Vamos apanhar óculos?"],["dedo","Clique no ecrã ou prima Espaço para começar."]]
+        montra: [["apresenta","Olá! Quantos símbolos consegue apanhar?"],["dedo","Aponte a câmara do telemóvel ao código."],["polegar","É só um minuto. Aceita o desafio?"],["apresenta","Jogue aqui mesmo, com o seu telemóvel."]],
+        teste: [["apresenta","Olá! Vamos apanhar símbolos?"],["dedo","Clique no ecrã ou prima Espaço para começar."]]
       },
       minimo: () => CONFIG.cobraMinimo,
-      atrair: () => `<h1>Apanhe os óculos!</h1>
+      atrair: () => `<h1>Apanhe os símbolos!</h1>
         <div class="demo"><canvas id="cDemo"></canvas></div>
         <div class="dpad" id="dpad"><span data-d="left">←</span><span data-d="up">↑</span><span data-d="down">↓</span><span data-d="right">→</span></div>`,
       aoAtrair: () => cobraDemo(),
