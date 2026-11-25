@@ -55,15 +55,22 @@ body.kiosk{cursor:none}body.kiosk .fsBtn{display:none}
 .mCarta.ok{background:#fff;outline-color:var(--ok);opacity:.72}
 .mCarta img{max-width:86%;max-height:86%;object-fit:contain;display:block}
 /* Menu de jogos (só para a equipa) */
-.menu{position:fixed;inset:0;z-index:15;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4vh;padding:5vw;text-align:center;cursor:default}
-.menu h2{font-size:5.5vh;font-weight:700;letter-spacing:-.02em;color:var(--ink)}
-.menu .lista{display:flex;flex-wrap:wrap;gap:2vw;justify-content:center;max-width:92vw}
-.mJogo{width:26vw;min-height:22vh;padding:3vh 2vw;border:.4vh solid var(--line);border-radius:2.4vh;background:#fff;display:flex;flex-direction:column;gap:1.2vh;align-items:center;justify-content:center;transition:border-color .15s,background .15s,transform .15s}
-.mJogo b{font-size:3.2vh;color:var(--ink)}
-.mJogo span{font-size:2.1vh;color:var(--mute);line-height:1.3}
-.mJogo em{font-style:normal;font-size:1.7vh;font-weight:700;color:var(--accent);min-height:2vh}
-.mJogo:focus,.mJogo:hover{outline:none;border-color:var(--accent);background:var(--claro);transform:scale(1.05)}
-.menu p{font-size:2vh;color:var(--mute)}
+/* --u: 1vh num ecrã 16:9; em ecrãs mais estreitos encolhe com a largura, para os cinco cartões caberem sempre numa fila */
+.menu{--u:min(1vh,.5625vw);position:fixed;inset:0;z-index:15;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:calc(4*var(--u));padding:4vw;text-align:center;cursor:default}
+.menu h2{font-size:calc(5.5*var(--u));font-weight:700;letter-spacing:-.02em;color:var(--ink)}
+.menu .lista{display:flex;gap:calc(1.6*var(--u));justify-content:center;align-items:stretch}
+.mJogo{--dv:calc(.66*var(--u));width:calc(30*var(--u));padding:calc(2*var(--u));border:calc(.4*var(--u)) solid var(--line);border-radius:calc(2.4*var(--u));background:#fff;display:flex;flex-direction:column;gap:calc(1.2*var(--u));align-items:center;justify-content:flex-start;transition:border-color .15s,background .15s,box-shadow .15s}
+.mJogo>b{font-size:calc(2.6*var(--u));line-height:1.15;color:var(--ink)}
+.mJogo>span{font-size:calc(1.8*var(--u));color:var(--mute);line-height:1.3}
+.mJogo>em{font-style:normal;font-size:calc(1.7*var(--u));font-weight:700;color:var(--accent);min-height:calc(2*var(--u));margin-top:auto}
+.mJogo:focus,.mJogo:hover{outline:none;border-color:var(--accent);background:var(--claro);box-shadow:0 calc(.8*var(--u)) calc(2.4*var(--u)) rgba(23,70,90,.18)}
+/* Demonstração de cada jogo dentro do cartão: a mesma do ecrã de espera, em ponto pequeno (sem título nem setas) */
+.mJogo>h1,.mJogo>.dpad{display:none}
+.mJogo .demo{flex:none;width:calc(20*var(--u));height:calc(20*var(--u));border-radius:calc(2*var(--u));background:#fff;pointer-events:none;overflow:hidden}
+.mJogo .demo.gDemoBox{width:calc(25*var(--u))}
+.mJogo .mMini{gap:calc(.8*var(--u))}
+.mJogo .mCarta{border-radius:calc(1*var(--u));font-size:calc(2*var(--u))}
+.menu p{font-size:calc(2*var(--u));color:var(--mute)}
 .attract h1{font-size:7vh;font-weight:700;letter-spacing:-.03em;line-height:1.05}
 .attract .qr svg{width:42vh;height:42vh;display:block}
 .attract .sub{font-size:2.6vh;color:var(--mute)}
@@ -518,6 +525,7 @@ function initScreen(){
   // ---- Vistas
   function vAttract(){
     if (!J) return;   // ainda não foi escolhido o jogo desta montra (menu aberto)
+    if (menuAberto) return;   // o menu tem as suas próprias demonstrações; o ecrã de espera volta em fecharMenu()
     mascIdle();
     if (SOLO) { stage.innerHTML = `<div class="attract"><h1>${J.titulo}</h1>
       <p class="sub"><b>Modo de teste</b> · clique aqui ou prima Espaço para começar<br>${J.ajudaTeste}</p></div>`; return; }
@@ -539,7 +547,7 @@ function initScreen(){
       const box = $("#demo"), pad = $("#dpad"); if (!box) return;
       let dir; do { dir = pick(DIRS); } while (dir === last); last = dir;
       pad.querySelectorAll("span").forEach(x => x.classList.remove("on"));
-      box.innerHTML = eSvg(dir, sizes[i++ % sizes.length] + "vh");
+      box.innerHTML = eSvg(dir, `calc(${sizes[i++ % sizes.length]}*var(--dv,1vh))`);   // --dv: unidade mais pequena dentro do menu de jogos
       demoT = setTimeout(() => { const a = $(`#dpad span[data-d="${dir}"]`); if (a) a.classList.add("on"); demoT = setTimeout(step, 800); }, 1000);
     };
     step();
@@ -846,7 +854,7 @@ function initScreen(){
   const naCobra = (cobra, c) => cobra.some(q => q[0] === c[0] && q[1] === c[1]);
   function prepararCanvas(cv, cols, rows){   // ajusta o canvas ao espaço disponível; devolve o contexto e o tamanho de uma casa
     const b = cv.parentElement.getBoundingClientRect();
-    const cel = Math.max(6, Math.floor(Math.min((b.width - 8) / cols, (b.height - 8) / rows))), dpr = Math.min(2, devicePixelRatio || 1);
+    const cel = Math.max(2, Math.floor(Math.min((b.width - 8) / cols, (b.height - 8) / rows))), dpr = Math.min(2, devicePixelRatio || 1);
     if (cv._cel !== cel) { cv._cel = cel; cv.style.width = cel * cols + "px"; cv.style.height = cel * rows + "px"; cv.width = cel * cols * dpr; cv.height = cel * rows * dpr; }
     const x = cv.getContext("2d"); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, cel * cols, cel * rows);
     return { x, cel };
@@ -1462,9 +1470,11 @@ function initScreen(){
     menuAberto = true;
     const m = document.createElement("div"); m.id = "menu"; m.className = "menu";
     m.innerHTML = `<h2>Que jogo fica nesta montra?</h2><div class="lista">${Object.keys(JOGOS).filter(existe).map(id =>
-      `<button class="mJogo" data-jogo="${id}"><b>${esc(CATALOGO[id].nome)}</b><span>${esc(CATALOGO[id].descricao)}</span><em>${J && J.id === id ? "Em uso" : ""}</em></button>`).join("")}</div>
+      `<button class="mJogo" data-jogo="${id}">${JOGOS[id].atrair(0)}<b>${esc(CATALOGO[id].nome)}</b><span>${esc(CATALOGO[id].descricao)}</span><em>${J && J.id === id ? "Em uso" : ""}</em></button>`).join("")}</div>
       <p>A escolha fica guardada neste computador. Para trocar, prima M.</p>`;
+    stage.innerHTML = "";   // tira a demonstração do ecrã de espera: as do menu usam os mesmos identificadores
     document.body.appendChild(m);
+    Object.keys(JOGOS).filter(existe).forEach(id => JOGOS[id].aoAtrair());   // cada cartão mostra o jogo a jogar-se sozinho
     m.querySelectorAll(".mJogo").forEach(b => { b.onclick = () => usarJogo(b.dataset.jogo); });
     (m.querySelector(`.mJogo[data-jogo="${J ? J.id : ""}"]`) || m.querySelector(".mJogo")).focus();
   }
